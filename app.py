@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
-from connection import GymDB, TrainerDB
+from connection import GymDB, TrainerDB, AuthDB
 from flask_cors import CORS
+import datetime
+from datetime import datetime, timedelta
 
 
 app = Flask(__name__)
@@ -8,6 +10,8 @@ CORS(app)
 
 db = GymDB()
 trainer_db = TrainerDB()
+auth_db = AuthDB()
+
 
 
 # -------------------------------
@@ -26,15 +30,126 @@ def create_user():
     try:
         data = request.json
 
-        required_fields = ["UserId", "Name", "Package_Period", "Start_Date", "Amount_Paid", "Phone_Number"]
+        required_fields = ["Name", "Package_Period", "Start_Date", "Amount_Paid", "Phone_Number", "Gender"]
+
+        valid_genders = ["Male", "Female", "Rather Not Say"]
+
+        if data["Gender"] not in valid_genders:
+            return jsonify({"error": "Invalid gender value"}), 400
+        
         for field in required_fields:
-            if field not in data:
+            if field not in data or data[field] == "":
                 return jsonify({"error": f"{field} is required"}), 400
 
+        # ✅ CHECK DUPLICATE PHONE
+        existing_user = db.get_user_by_phone(data["Phone_Number"])
+        if existing_user:
+            return jsonify({"error": "Phone number already exists"}), 400
+
         db.create_user(data)
+
         return jsonify({"message": "✅ User created successfully"}), 201
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+# @app.route("/payments/monthly", methods=["GET"])
+# def get_monthly_revenue():
+#     try:
+#         year = int(request.args.get("year"))
+#         month = int(request.args.get("month"))
+
+#         total = sum(p.get("Amount_Paid", 0) for p in db.payments.find({
+#             "Year": year,
+#             "Month": month
+#         }))
+
+#         return jsonify({
+#             "total_revenue": total,
+#             "count": db.payments.count_documents({
+#                 "Year": year,
+#                 "Month": month
+#             })
+#         }), 200
+
+#     except Exception as e:
+#         print("❌ Monthly Error:", str(e))
+#         return jsonify({"error": str(e)}), 500
+    
+# @app.route("/payments/yearly", methods=["GET"])
+# def get_yearly_revenue():
+#     try:
+#         year = int(request.args.get("year"))
+
+#         total = sum(p.get("Amount_Paid", 0) for p in db.payments.find({
+#             "Year": year
+#         }))
+
+#         return jsonify({
+#             "total_revenue": total,
+#             "count": db.payments.count_documents({
+#                 "Year": year
+#             })
+#         }), 200
+
+#     except Exception as e:
+#         print("❌ Yearly Error:", str(e))
+#         return jsonify({"error": str(e)}), 500
+    
+# @app.route("/payments/trend", methods=["GET"])
+# def get_trend():
+#     try:
+#         now = datetime.now()
+#         data = []
+
+#         for i in range(5, -1, -1):
+#             month = now.month - i
+#             year = now.year
+
+#             if month <= 0:
+#                 month += 12
+#                 year -= 1
+
+#             total = sum(p.get("Amount_Paid", 0) for p in db.payments.find({
+#                 "Year": year,
+#                 "Month": month
+#             }))
+
+#             data.append({
+#                 "month": f"{month}/{year}",
+#                 "revenue": total
+#             })
+
+#         return jsonify(data), 200
+
+#     except Exception as e:
+#         print("❌ Trend Error:", str(e))
+#         return jsonify({"error": str(e)}), 500
+
+@app.route("/payments", methods=["GET"])
+def get_payments():
+    try:
+        year = request.args.get("year")
+        month = request.args.get("month")
+        name = request.args.get("name")
+
+        query = {}
+
+        if year:
+            query["Year"] = int(year)
+
+        if month:
+            query["Month"] = int(month)
+
+        if name:
+            query["Name"] = {"$regex": name, "$options": "i"}
+
+        payments = list(db.payments.find(query, {"_id": 0}))
+
+        return jsonify(payments), 200
+
+    except Exception as e:
+        print("❌ Payments API Error:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
@@ -54,33 +169,54 @@ def get_all_users():
 # -------------------------------
 # GET SINGLE USER
 # -------------------------------
-@app.route("/users/<name>", methods=["GET"])
-def get_user(name):
-    try:
-        user = db.get_user_by_name(name)
+@app.route("/users/<phone>", methods=["GET"])
+def get_user(phone):
+    user = db.get_user_by_phone_full(phone)
 
-        if isinstance(user, str):
-            return jsonify({"error": user}), 404
+    if isinstance(user, str):
+        return jsonify({"error": user}), 404
 
-        return jsonify(user), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify(user), 200
 
 
 # -------------------------------
 # UPDATE USER
 # -------------------------------
-@app.route("/users/<name>", methods=["PUT"])
-def update_user(name):
+# @app.route("/users/<name>", methods=["PUT"])
+# def update_user(name):
+#     try:
+#         data = request.json
+
+#         db.update_user(name, data)
+#         return jsonify({"message": "✅ User updated successfully"}), 200
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+    
+@app.route("/users/<phone>", methods=["PUT"])
+def update_user(phone):
+    data = request.json
+    db.update_user(phone, data)
+    return jsonify({"message": "✅ User updated successfully"}), 200
+
+@app.route("/users/<phone>/renew", methods=["POST"])
+def renew_user(phone):
     try:
         data = request.json
 
-        db.update_user(name, data)
-        return jsonify({"message": "✅ User updated successfully"}), 200
+        required = ["Start_Date", "Package_Period", "Amount_Paid"]
+
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"{field} required"}), 400
+
+        db.renew_membership(phone, data)
+
+        return jsonify({"message": "✅ Membership renewed"}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
 
 # -------------------------------
@@ -95,6 +231,7 @@ def delete_user(name):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
+
 
 # -------------------------------------------------- Trainers Panel ----------------
 
@@ -175,6 +312,50 @@ def add_workout(name):
         trainer_db.add_workout_log(name, data)
 
         return jsonify({"message": "✅ Workout added"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
+
+@app.route("/signup", methods=["POST"])
+def signup():
+    try:
+        data = request.json
+
+        required = ["name", "email", "password", "role"]
+        for field in required:
+            if field not in data:
+                return jsonify({"error": f"{field} is required"}), 400
+
+        result = auth_db.create_user(data)
+
+        if "error" in result:
+            return jsonify(result), 400
+
+        return jsonify(result), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
+@app.route("/login", methods=["POST"])
+def login():
+    try:
+        data = request.json
+
+        email = data.get("email")
+        password = data.get("password")
+
+        if not email or not password:
+            return jsonify({"error": "Email and password required"}), 400
+
+        result = auth_db.login_user(email, password)
+
+        if "error" in result:
+            return jsonify(result), 401
+
+        return jsonify(result), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
