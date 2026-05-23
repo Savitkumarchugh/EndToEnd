@@ -68,7 +68,7 @@ def create_user():
                 data["Package_Period"]
             )
 
-            # print("📧 Sending email to:", data["Email"])
+            print("Sending email to:", data["Email"])
 
             send_member_email(
                 data["Email"],
@@ -76,7 +76,7 @@ def create_user():
                 end_date
             )
 
-            # print("✅ Email function executed")
+            print("Email function executed")
 
         return jsonify({"message": "✅ User created successfully"}), 201
 
