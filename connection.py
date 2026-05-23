@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
 
 
+
 class GymDB:
     def __init__(self):
         load_dotenv()
@@ -45,10 +46,10 @@ class GymDB:
                     # ✅ Insert payment
                     self.add_payment(user_data, "New", session=session)
 
-            print("✅ User + Payment inserted safely")
+            print("User + Payment inserted safely")
 
         except Exception as e:
-            print("❌ Error:", str(e))
+            print("Error:", str(e))
             raise
 
     # def add_payment(self, user_data, source="membership", session=None):

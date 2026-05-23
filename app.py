@@ -3,6 +3,9 @@ from connection import GymDB, TrainerDB, AuthDB
 from flask_cors import CORS
 import datetime
 from datetime import datetime, timedelta
+from email_service import send_member_email
+from dotenv import load_dotenv
+
 
 
 app = Flask(__name__)
@@ -11,6 +14,8 @@ CORS(app)
 db = GymDB()
 trainer_db = TrainerDB()
 auth_db = AuthDB()
+
+load_dotenv()
 
 
 
@@ -30,7 +35,15 @@ def create_user():
     try:
         data = request.json
 
-        required_fields = ["Name", "Package_Period", "Start_Date", "Amount_Paid", "Phone_Number", "Gender"]
+        required_fields = [
+        "Name",
+        "Package_Period",
+        "Start_Date",
+        "Amount_Paid",
+        "Phone_Number",
+        "Gender",
+        "Email"
+        ]
 
         valid_genders = ["Male", "Female", "Rather Not Say"]
 
@@ -47,6 +60,23 @@ def create_user():
             return jsonify({"error": "Phone number already exists"}), 400
 
         db.create_user(data)
+
+        if data.get("Email"):
+
+            end_date = db.calculate_end_date(
+                data["Start_Date"],
+                data["Package_Period"]
+            )
+
+            # print("📧 Sending email to:", data["Email"])
+
+            send_member_email(
+                data["Email"],
+                data["Name"],
+                end_date
+            )
+
+            # print("✅ Email function executed")
 
         return jsonify({"message": "✅ User created successfully"}), 201
 

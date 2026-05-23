@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate,useLocation } from "react-router-dom";
+import { useEffect } from "react";
 
 import Navbar from "./Navbar";
 import Hero from "./MainHero";
@@ -11,7 +12,50 @@ import Contact from "./Common/Contact";
 import Membership from "./Common/Membership";
 import Services from "./Common/Services";
 import Home from "./Common/Home";
+import Products from "./Products";
 
+
+
+function ThemeColorHandler() {
+  const location = useLocation();
+
+  useEffect(() => {
+    let color = "#111827"; // default dark
+
+    switch (location.pathname) {
+      case "/home":
+        color = "#111827"; // dark
+        break;
+      case "/membership":
+        color = "#111827"; // slightly different dark
+        break;
+      case "/payment":
+        color = "#111827"; // black
+        break;
+      case "/services":
+        color = "#111827"; // gray
+        break;
+      case "/contact":
+        color = "#111827"; // slightly different dark
+        break;
+      case "/owner":
+        color = "#7f1d1d"; // strong green
+        break;
+      case "/products":
+        color = "#22c55e"; // strong green
+        break;
+      default:
+        color = "#111827";
+    }
+
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute("content", color);
+    }
+  }, [location]);
+
+  return null;
+}
 
 // ---------------- DASHBOARDS ----------------
 
@@ -27,6 +71,19 @@ function OwnerDashboard() {
     </>
   );
 }
+
+function ProductsDashboard() {
+  return (
+    <>
+      <Navbar />
+      {/* <Hero /> */}
+      <Products />
+      <Features />
+      <Footer />
+    </>
+  );
+}
+
 
 function ContactDashboard() {
   return (
@@ -86,8 +143,6 @@ function HomeDashboard() {
 }
 
 
-
-
 // TRAINER
 function TrainerDashboard() {
   return (
@@ -127,15 +182,15 @@ function ProtectedRoute({ children, role }) {
 export default function Index() {
   return (
     <BrowserRouter>
+    <ThemeColorHandler /> 
       <Routes>
         {/* LOGIN PAGE */}
         <Route path="/" element={<LoginDashboard />} />
         <Route path="/contact" element={<ContactDashboard />} />
         <Route path="/membership" element={<MembershipDashboard />} />
         <Route path="/services" element={<ServicesDashboard />} />
-        <Route path="/home" element={<HomeDashboard />} />
-
-        
+        <Route path="/home" element={<HomeDashboard />} />  
+        <Route path="/products" element={<ProductsDashboard />} />
 
         {/* DASHBOARDS */}
         <Route
@@ -146,6 +201,7 @@ export default function Index() {
             </ProtectedRoute>
           }
         />
+        
 
         <Route
           path="/trainer"

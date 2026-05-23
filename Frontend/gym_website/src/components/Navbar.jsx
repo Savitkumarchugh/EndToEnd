@@ -35,6 +35,7 @@ export default function Navbar() {
   {/* Always visible */}
   <Link to="/services" className="hover:text-green-400">Services</Link>
   <Link to="/membership" className="hover:text-green-400">Membership</Link>
+  <Link to="/products" className="hover:text-green-400">Products</Link>
 
   {/* Contact (only when NOT logged in, placed at END) */}
   {!isLoggedIn && (
@@ -78,36 +79,47 @@ export default function Navbar() {
 
       {/* Mobile Dropdown */}
       {isOpen && (
-        <div className="md:hidden flex flex-col gap-4 px-6 py-4 bg-gray-900 border-t border-gray-800">
-          
-          <Link to="/home" onClick={() => setIsOpen(false)}>Home</Link>
-          <Link to="/services" onClick={() => setIsOpen(false)}>Services</Link>
-          <Link to="/membership" onClick={() => setIsOpen(false)}>Membership</Link>
-          <Link to="/contact" onClick={() => setIsOpen(false)}>Contact</Link>
+ <div className="md:hidden flex flex-col gap-4 px-6 py-4 bg-gray-900 border-t border-gray-800">
 
-          {isLoggedIn ? (
-            <>
-              <Link to="/owner" onClick={() => setIsOpen(false)}>Dashboard</Link>
+  {/* Home (only when NOT logged in) */}
+  {!isLoggedIn && (
+    <Link to="/home" onClick={() => setIsOpen(false)}>Home</Link>
+  )}
 
-              <button
-                onClick={handleLogout}
-                className="bg-green-500 py-2 rounded-xl mt-2"
-              >
-                Log Out
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={() => {
-                setIsOpen(false);
-                navigate("/");
-              }}
-              className="bg-green-500 py-2 rounded-xl mt-2"
-            >
-              Log In
-            </button>
-          )}
-        </div>
+  {/* Always visible */}
+  <Link to="/services" onClick={() => setIsOpen(false)}>Services</Link>
+  <Link to="/membership" onClick={() => setIsOpen(false)}>Membership</Link>
+  <Link to="/products" onClick={() => setIsOpen(false)}>Products</Link>
+
+  {/* Contact (only when NOT logged in) */}
+  {!isLoggedIn && (
+    <Link to="/contact" onClick={() => setIsOpen(false)}>Contact</Link>
+  )}
+
+  {/* Logged In Section */}
+  {isLoggedIn ? (
+    <>
+      <Link to="/owner" onClick={() => setIsOpen(false)}>Dashboard</Link>
+
+      <button
+        onClick={handleLogout}
+        className="bg-green-500 py-2 rounded-xl mt-2"
+      >
+        Log Out
+      </button>
+    </>
+  ) : (
+    <button
+      onClick={() => {
+        setIsOpen(false);
+        navigate("/");
+      }}
+      className="bg-green-500 py-2 rounded-xl mt-2"
+    >
+      Log In
+    </button>
+  )}
+</div>
       )}
     </nav>
   );
