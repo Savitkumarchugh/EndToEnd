@@ -78,7 +78,7 @@ def create_user():
 
             print("Email function executed")
 
-        return jsonify({"message": "✅ User created successfully"}), 201
+        return jsonify({"message": "✅ User created successfully"}), 200
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -4,11 +4,11 @@ import { MEMBERS_API } from "../config/api";
 import { lazy, Suspense } from "react";
 import imageCompression from "browser-image-compression";
 
-
 export default function MembersHero() {
   const [isRenewMode, setIsRenewMode] = useState(false);
   const [view, setView] = useState("all");
   const [users, setUsers] = useState([]);
+  const [zoomedImage, setZoomedImage] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -85,27 +85,35 @@ export default function MembersHero() {
 
     return true;
   };
-  const filteredUsers = users.filter((user) => {
-    const search = searchPhone.toLowerCase();
+ const filteredUsers = users.filter((user) => {
+  const search = searchPhone.toLowerCase();
 
-    const matchesSearch =
-      user.Phone_Number.includes(search) ||
-      user.Name.toLowerCase().includes(search);
+  const matchesSearch =
+    user.Phone_Number.includes(search) ||
+    user.Name.toLowerCase().includes(search);
 
-    if (filter === "expired") return user.Days_Remaining < 0 && matchesSearch;
+  // ❌ Expired
+  if (filter === "expired") {
+    return user.Days_Remaining < 0 && matchesSearch;
+  }
 
-    if (filter === "today")
-      return (
-        user.Days_Remaining === -1 && matchesSearch
-      );
+  // 🟠 Expiring Today
+  if (filter === "today") {
+    return user.Days_Remaining === 0 && matchesSearch;
+  }
 
-    if (filter === "soon")
-      return (
-        user.Days_Remaining >= 0 && user.Days_Remaining < 5 && matchesSearch
-      );
+  // 🟡 Expiring Soon
+  if (filter === "soon") {
+    return (
+      user.Days_Remaining > 0 &&
+      user.Days_Remaining < 5 &&
+      matchesSearch
+    );
+  }
 
-    return matchesSearch;
-  });
+  // ✅ All
+  return matchesSearch;
+});
 
   // ---------------- FETCH ALL USERS ----------------
   const fetchUsers = async () => {
@@ -252,14 +260,18 @@ export default function MembersHero() {
 
     if (!validateForm()) return;
 
+    setLoading(true);
+
     const endDate = calculateEndDate(form.Start_Date, form.Package_Period);
 
     try {
-      await fetch(MEMBERS_API.FETCH_ALL_USERS, {
+      const response = await fetch(MEMBERS_API.FETCH_ALL_USERS, {
         method: "POST",
+
         headers: {
           "Content-Type": "application/json",
         },
+
         body: JSON.stringify({
           ...form,
           Package_Period: Number(form.Package_Period),
@@ -268,20 +280,38 @@ export default function MembersHero() {
         }),
       });
 
-      // alert("✅ Member Added");
+      const data = await response.json();
+
+      if (!response.ok) {
+        alert(data.error || "❌ Failed");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ Refresh UI
+      await fetchUsers();
+      await fetchPayments();
+
+      // ✅ Switch screen
       setView("all");
+
+      // ✅ Reset form
       setForm({
         Name: "",
+        Gender: "Male",
+        Phone_Number: "",
+        Email: "",
         Package_Period: "1",
         Start_Date: "",
         Amount_Paid: "",
-        Phone_Number: "",
-        Gender: "",
+        Profile_Image: "",
       });
-      fetchUsers();
-      fetchPayments();
     } catch (err) {
+      console.error(err);
+
       alert("❌ Error adding member");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -405,146 +435,395 @@ export default function MembersHero() {
           </div>
         )} */}
 
-        {view === "all" && (
-          <div>
-            {/* SEARCH */}
-            <div className="relative mb-3">
-              <input
-                placeholder="Search by Name or Phone"
-                className="p-2 bg-gray-800 w-full rounded pr-10"
-                value={searchPhone}
-                onChange={(e) => setSearchPhone(e.target.value)}
+     {view === "all" && (
+  <div>
+
+    {/* SEARCH */}
+    <div className="relative mb-4">
+      <input
+        placeholder="Search by Name or Phone"
+        className="
+          p-3
+          bg-gray-800
+          w-full
+          rounded-xl
+          pr-10
+          outline-none
+          border border-gray-700
+          focus:ring-2
+          focus:ring-green-500
+        "
+        value={searchPhone}
+        onChange={(e) => setSearchPhone(e.target.value)}
+      />
+
+      {/* CLEAR BUTTON */}
+      {searchPhone && (
+        <button
+          onClick={() => setSearchPhone("")}
+          className="
+            absolute
+            right-3
+            top-1/2
+            -translate-y-1/2
+            text-gray-400
+            hover:text-white
+          "
+        >
+          ✖
+        </button>
+      )}
+    </div>
+
+{/* FILTER BUTTONS */} 
+<div className="flex flex-col md:flex-row gap-3 mb-6">
+  {["all", "expired", "soon", "today"].map((f) => (
+    <button
+      key={f}
+      onClick={() => setFilter(f)}
+      className={`w-full md:w-auto px-4 py-2 rounded-xl transition ${
+        filter === f
+          ? "bg-green-500 text-white shadow-lg"
+          : "bg-gray-800 hover:bg-gray-700 text-white"
+      }`}
+    >
+      {f === "all" && "All Members"}
+      {f === "expired" && "Expired"}
+      {f === "soon" && "Expiring Soon"}
+      {f === "today" && "Expiring Today"}
+    </button>
+  ))}
+</div>
+
+    {/* MEMBERS COUNT */}
+    <div className="mb-3 text-sm text-gray-400">
+      Total Members:{" "}
+      <span className="text-white font-semibold">
+        {filteredUsers.length}
+      </span>
+    </div>
+
+    {/* LIST */}
+    <div className="space-y-4 max-h-[17rem] overflow-y-auto pr-1">
+
+      {filteredUsers.length === 0 ? (
+        <div className="text-center py-10 text-gray-400">
+          No members found
+        </div>
+      ) : (
+        [...filteredUsers]
+          .sort(
+            (a, b) =>
+              new Date(b.Created_At || 0) -
+              new Date(a.Created_At || 0)
+          )
+          .map((user, i) => (
+            <div
+              key={i}
+              className={`
+                relative
+                overflow-hidden
+                rounded-3xl
+                border
+                backdrop-blur-lg
+                shadow-xl
+                ${
+                  user.Days_Remaining < 0
+                    ? "bg-red-950/70 border-red-800"
+                    : user.Days_Remaining >= 0 &&
+                        user.Days_Remaining < 5
+                      ? "bg-yellow-100 border-yellow-300 text-black"
+                      : "bg-gray-900 border-gray-800"
+                }
+              `}
+            >
+
+              {/* PREMIUM TOP BAR */}
+              <div
+                className={`
+                  h-2 w-full
+                  ${
+                    user.Days_Remaining < 0
+                      ? "bg-red-500"
+                      : user.Days_Remaining >= 0 &&
+                          user.Days_Remaining < 5
+                        ? "bg-yellow-500"
+                        : "bg-green-500"
+                  }
+                `}
               />
 
-              {/* CLEAR BUTTON */}
-              {searchPhone && (
-                <button
-                  onClick={() => setSearchPhone("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
-                >
-                  ✖
-                </button>
-              )}
+              <div className="p-4 md:p-5">
+
+                {/* TOP ROW */}
+                <div className="flex items-start justify-between gap-3">
+
+                  {/* LEFT */}
+                  <div className="flex gap-4">
+
+                    {/* PROFILE IMAGE */}
+                    <img
+                      src={
+                        user.Profile_Image ||
+                        "/gym_images/avatar.jpg"
+                      }
+                      alt={user.Name}
+                      onClick={() =>
+                        setZoomedImage(
+                          user.Profile_Image ||
+                          "/gym_images/avatar.jpg"
+                        )
+                      }
+                      className="
+                        w-20 h-20
+                        md:w-24 md:h-24
+                        rounded-2xl
+                        object-cover
+                        border-2 border-white/10
+                        shadow-lg
+                        cursor-pointer
+                        hover:opacity-90
+                        transition
+                      "
+                    />
+
+                    {/* USER INFO */}
+                    <div>
+
+                      {/* NAME + STATUS */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-lg md:text-xl font-bold">
+                          {user.Name}
+                        </h3>
+
+                        {/* STATUS CHIP */}
+                        <span
+                          className={`
+                            text-xs px-3 py-1 rounded-full font-semibold
+                            ${
+                              user.Days_Remaining < 0
+                                ? "bg-red-500 text-white"
+                                : user.Days_Remaining === 0
+                                  ? "bg-orange-500 text-white"
+                                  : user.Days_Remaining > 0 &&
+                                      user.Days_Remaining < 5
+                                    ? "bg-yellow-400 text-black"
+                                    : "bg-green-500 text-white"
+                            }
+                          `}
+                        >
+                          {user.Days_Remaining < 0
+                            ? "Expired"
+                            : user.Days_Remaining === 0
+                              ? "Expiring Today"
+                              : user.Days_Remaining > 0 &&
+                                  user.Days_Remaining < 5
+                                ? "Expiring Soon"
+                                : "Active"}
+                        </span>
+                      </div>
+
+                      {/* PHONE */}
+                      <p className="text-sm opacity-80 mt-2">
+                        📞 +91 {user.Phone_Number}
+                      </p>
+
+                      {/* EMAIL */}
+                      {user.Email && (
+                        <p className="text-sm opacity-80 mt-1 break-all">
+                          📧 {user.Email}
+                        </p>
+                      )}
+
+                      {/* JOIN DATE */}
+                      <p className="text-sm opacity-80 mt-1">
+                        🗓 Joined: {user.Start_Date}
+                      </p>
+
+                    </div>
+                  </div>
+
+                  {/* EDIT BUTTON */}
+                  <button
+                    onClick={() => {
+                      setSelectedUser(user);
+                      setIsModalOpen(true);
+                    }}
+                    className="
+                      px-4 py-2
+                      rounded-xl
+                      bg-green-500
+                      hover:bg-green-600
+                      text-white
+                      text-sm
+                      font-semibold
+                      shadow-lg
+                    "
+                  >
+                    Edit
+                  </button>
+                </div>
+
+                {/* DIVIDER */}
+                <div className="my-4 border-t border-white/10" />
+
+                {/* STATS GRID */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+
+                  {/* PACKAGE */}
+                  <div
+                    className={`
+                      rounded-2xl
+                      p-3
+                      ${
+                        user.Days_Remaining >= 0 &&
+                        user.Days_Remaining < 5
+                          ? "bg-white/50"
+                          : "bg-white/5"
+                      }
+                    `}
+                  >
+                    <p className="text-xs opacity-70">
+                      Package
+                    </p>
+
+                    <p className="font-bold text-sm mt-1">
+                      {user.Package_Period} Month
+                    </p>
+                  </div>
+
+                  {/* AMOUNT */}
+                  <div
+                    className={`
+                      rounded-2xl
+                      p-3
+                      ${
+                        user.Days_Remaining >= 0 &&
+                        user.Days_Remaining < 5
+                          ? "bg-white/50"
+                          : "bg-white/5"
+                      }
+                    `}
+                  >
+                    <p className="text-xs opacity-70">
+                      Paid
+                    </p>
+
+                    <p className="font-bold text-sm mt-1">
+                      ₹{user.Amount_Paid}
+                    </p>
+                  </div>
+
+                  {/* END DATE */}
+                  <div
+                    className={`
+                      rounded-2xl
+                      p-3
+                      ${
+                        user.Days_Remaining >= 0 &&
+                        user.Days_Remaining < 5
+                          ? "bg-white/50"
+                          : "bg-white/5"
+                      }
+                    `}
+                  >
+                    <p className="text-xs opacity-70">
+                      Expiry
+                    </p>
+
+                    <p className="font-bold text-sm mt-1">
+                      {user.End_Date}
+                    </p>
+                  </div>
+
+                  {/* DAYS LEFT */}
+                  <div
+                    className={`
+                      rounded-2xl
+                      p-3
+                      ${
+                        user.Days_Remaining < 0
+                          ? "bg-red-500/20"
+                          : user.Days_Remaining === 0
+                            ? "bg-orange-500/20"
+                            : user.Days_Remaining > 0 &&
+                                user.Days_Remaining < 5
+                              ? "bg-yellow-500/20"
+                              : "bg-green-500/20"
+                      }
+                    `}
+                  >
+                    <p className="text-xs opacity-70">
+                      Remaining
+                    </p>
+
+                    <p className="font-bold text-sm mt-1">
+                      {user.Days_Remaining < 0
+                        ? `${Math.abs(
+                            user.Days_Remaining
+                          )} days ago`
+                        : user.Days_Remaining === 0
+                          ? "Expires Today"
+                          : `${user.Days_Remaining} days`}
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
             </div>
-
-            {/* FILTER BUTTONS */}
-            <div className="flex gap-2 mb-3">
-              {["all", "expired", "soon", "today"].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1 rounded ${
-                    filter === f ? "bg-green-500" : "bg-gray-700"
-                  }`}
-                >
-                  {f === "all" && "All"}
-                  {f === "expired" && "Expired"}
-                  {f === "soon" && "Expiring Soon"}
-                  {f === "today" && "Expiring Today"}
-                </button>
-              ))}
-            </div>
-
-            {/* LIST */}
-            <div className="space-y-3 max-h-[21rem] overflow-y-auto">
-              {/* <div className="space-y-3 max-h-[70vh] overflow-y-auto"> */}
-              {filteredUsers.length === 0 ? (
-                <p className="text-gray-400 text-center">No members found</p>
-              ) : (
-             filteredUsers.map((user, i) => (
-  <div
-    key={i}
-    className={`
-      p-4 rounded-2xl transition-all duration-300
-      shadow-md border
-      ${
-        user.Days_Remaining < 0
-          ? "bg-red-900 border-red-700"
-          : user.Days_Remaining >= 0 && user.Days_Remaining < 5
-          ? "bg-yellow-100 text-black border-yellow-300"
-          : "bg-gray-800 hover:bg-gray-700 border-gray-700"
-      }
-    `}
-  >
-    {/* TOP SECTION */}
-    <div className="flex items-center justify-between">
-
-      {/* LEFT */}
-      <div className="flex items-center gap-3">
-
-        {/* PROFILE IMAGE */}
-        <div className="relative">
-          <img
-            src={
-              user.Profile_Image ||
-              "/gym_images/avatar.jpg"
-            }
-            alt={user.Name}
-            className="
-              w-14 h-14
-              md:w-16 md:h-16
-              rounded-full
-              object-cover
-              border-2 border-green-500
-              shadow-lg
-            "
-          />
-
-          {/* ONLINE DOT */}
-          <span className="
-            absolute bottom-0 right-0
-            w-3 h-3 bg-green-500
-            border-2 border-white
-            rounded-full
-          " />
-        </div>
-
-        {/* USER INFO */}
-        <div>
-          <h3 className="font-bold text-base md:text-lg">
-            {user.Name}
-          </h3>
-
-          <p className="text-sm opacity-80">
-            📞 +91 {user.Phone_Number}
-          </p>
-
-          <p className="text-sm opacity-80">
-            📅 Ends: {user.End_Date}
-          </p>
-
-          <p className="text-sm font-medium mt-1">
-            ⏳ {user.Days_Remaining} days left
-          </p>
-        </div>
-      </div>
-
-      {/* EDIT BUTTON */}
-      <button
-        onClick={() => {
-          setSelectedUser(user);
-          setIsModalOpen(true);
-        }}
-        className="
-          px-4 py-2
-          rounded-xl
-          bg-green-500
-          hover:bg-green-600
-          text-white
-          text-sm
-          font-medium
-          transition-all
-        "
-      >
-        Edit
-      </button>
+          ))
+      )}
     </div>
   </div>
-))
-              )}
-            </div>
-          </div>
-        )}
+)}
+
+{/* IMAGE ZOOM MODAL */}
+{zoomedImage && (
+  <div
+    className="
+      fixed inset-0
+      bg-black/90
+      z-50
+      flex
+      items-center
+      justify-center
+      p-4
+    "
+  >
+
+    {/* CLOSE BUTTON */}
+    <button
+      onClick={() => setZoomedImage(null)}
+      className="
+        absolute
+        top-5
+        right-5
+        text-white
+        text-3xl
+        font-bold
+        hover:text-red-400
+        transition
+      "
+    >
+      ✕
+    </button>
+
+    {/* IMAGE */}
+    <img
+      src={zoomedImage}
+      alt="Zoomed"
+      className="
+        max-w-full
+        max-h-[90vh]
+        rounded-2xl
+        object-contain
+        shadow-2xl
+      "
+    />
+
+  </div>
+)}
 
         {/* ---------------- VIEW SINGLE ---------------- */}
         {/* {view === "single" && (
@@ -674,164 +953,198 @@ export default function MembersHero() {
           </form>
         )} */}
 
-{view === "add" && (
-  <form
-    onSubmit={handleSubmit}
-    className="grid grid-cols-1 md:grid-cols-2 gap-4"
-  >
+        {view === "add" && (
+          <form
+            onSubmit={handleSubmit}
+            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+          >
+            {/* NAME */}
+            <input
+              placeholder="Name"
+              className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
+              value={form.Name}
+              onChange={(e) => setForm({ ...form, Name: e.target.value })}
+            />
 
-    {/* NAME */}
-    <input
-      placeholder="Name"
-      className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-      value={form.Name}
-      onChange={(e) => setForm({ ...form, Name: e.target.value })}
-    />
+            {/* GENDER */}
+            <select
+              className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
+              value={form.Gender}
+              onChange={(e) => setForm({ ...form, Gender: e.target.value })}
+            >
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Rather Not Say">Rather Not Say</option>
+            </select>
 
-    {/* GENDER */}
-    <select
-      className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-      value={form.Gender}
-      onChange={(e) => setForm({ ...form, Gender: e.target.value })}
-    >
-      <option value="Male">Male</option>
-      <option value="Female">Female</option>
-      <option value="Rather Not Say">Rather Not Say</option>
-    </select>
+            {/* PHONE */}
+            <div className="flex w-full">
+              <span className="bg-gray-700 px-3 flex items-center rounded-l-lg text-sm md:text-base">
+                +91
+              </span>
 
-    {/* PHONE */}
-    <div className="flex w-full">
-      <span className="bg-gray-700 px-3 flex items-center rounded-l-lg text-sm md:text-base">
-        +91
-      </span>
+              <input
+                type="tel"
+                placeholder="Phone Number"
+                className="p-3 bg-gray-800 w-full rounded-r-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
+                value={form.Phone_Number}
+                onChange={(e) =>
+                  setForm({ ...form, Phone_Number: e.target.value })
+                }
+              />
+            </div>
 
-      <input
-        type="tel"
-        placeholder="Phone Number"
-        className="p-3 bg-gray-800 w-full rounded-r-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-        value={form.Phone_Number}
-        onChange={(e) =>
-          setForm({ ...form, Phone_Number: e.target.value })
-        }
-      />
-    </div>
+            {/* EMAIL */}
+            <input
+              type="email"
+              placeholder="Email Address"
+              className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
+              value={form.Email || ""}
+              onChange={(e) => setForm({ ...form, Email: e.target.value })}
+            />
 
-    {/* EMAIL */}
-    <input
-      type="email"
-      placeholder="Email Address"
-      className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-      value={form.Email || ""}
-      onChange={(e) =>
-        setForm({ ...form, Email: e.target.value })
-      }
-    />
+            {/* PACKAGE */}
+            <select
+              className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
+              value={form.Package_Period}
+              onChange={(e) =>
+                setForm({ ...form, Package_Period: e.target.value })
+              }
+            >
+              <option value="1">1 Month</option>
+              <option value="3">3 Months</option>
+              <option value="6">6 Months</option>
+              <option value="12">12 Months</option>
+            </select>
 
-    {/* PACKAGE */}
-    <select
-      className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-      value={form.Package_Period}
-      onChange={(e) =>
-        setForm({ ...form, Package_Period: e.target.value })
-      }
-    >
-      <option value="1">1 Month</option>
-      <option value="3">3 Months</option>
-      <option value="6">6 Months</option>
-      <option value="12">12 Months</option>
-    </select>
+            {/* START DATE */}
+            <div className="relative w-full">
+              <input
+                type="date"
+                className="
+      w-full
+      h-[48px]
+      p-3
+      bg-gray-800
+      rounded-lg
+      text-sm md:text-base
+      outline-none
+      focus:ring-2 focus:ring-green-500
+      text-white
+      appearance-none
+    "
+                value={form.Start_Date}
+                onChange={(e) =>
+                  setForm({ ...form, Start_Date: e.target.value })
+                }
+              />
+            </div>
 
-    {/* START DATE */}
-    <input
-      type="date"
-      className="p-3 bg-gray-800 rounded-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-      value={form.Start_Date}
-      onChange={(e) =>
-        setForm({ ...form, Start_Date: e.target.value })
-      }
-    />
+            {/* AMOUNT */}
+            <div className="flex h-[48px] w-full">
+              <span
+                className="
+      bg-gray-700
+      px-3
+      flex items-center
+      rounded-l-lg
+      text-sm md:text-base
+    "
+              >
+                ₹
+              </span>
 
-    {/* AMOUNT */}
-    <div className="flex w-full">
-      <span className="bg-gray-700 px-3 flex items-center rounded-l-lg text-sm md:text-base">
-        ₹
-      </span>
+              <input
+                type="number"
+                placeholder="Amount Paid"
+                className="
+      h-full
+      p-3
+      bg-gray-800
+      w-full
+      rounded-r-lg
+      text-sm md:text-base
+      outline-none
+      focus:ring-2 focus:ring-green-500
+    "
+                value={form.Amount_Paid}
+                onChange={(e) =>
+                  setForm({ ...form, Amount_Paid: e.target.value })
+                }
+              />
+            </div>
 
-      <input
-        type="number"
-        placeholder="Amount Paid"
-        className="p-3 bg-gray-800 w-full rounded-r-lg text-sm md:text-base outline-none focus:ring-2 focus:ring-green-500"
-        value={form.Amount_Paid}
-        onChange={(e) =>
-          setForm({ ...form, Amount_Paid: e.target.value })
-        }
-      />
-    </div>
+            {/* PHOTO */}
+            <div className="w-full">
+              {/* HIDDEN INPUT */}
+              <input
+                id="member-photo"
+                type="file"
+                accept="image/*"
+                capture="user"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files[0];
 
-    {/* PHOTO */}
-    <div className="flex flex-col justify-center">
-      <label className="mb-1 text-sm text-gray-300">
-        Member Photo
-      </label>
+                  if (!file) return;
 
-      <input
-        type="file"
-        accept="image/*"
-        capture="user"
-        className="
-          w-full
-          text-sm
-          bg-gray-800
-          rounded-lg
-          cursor-pointer
-          file:mr-3
-          file:border-0
-          file:bg-green-500
-          file:px-4
-          file:py-2
-          file:rounded-lg
-          file:text-white
-          file:cursor-pointer
-        "
-        onChange={async (e) => {
-      const file = e.target.files[0];
+                  try {
+                    // ✅ Compress image
+                    const compressedFile = await imageCompression(file, {
+                      maxSizeMB: 0.3,
+                      maxWidthOrHeight: 600,
+                      useWebWorker: true,
+                    });
 
-      if (!file) return;
+                    // ✅ Convert to base64
+                    const reader = new FileReader();
 
-      try {
-        // ✅ Compress image
-        const compressedFile = await imageCompression(file, {
-          maxSizeMB: 0.3, // ~30% compression
-          maxWidthOrHeight: 600,
-          useWebWorker: true,
-        });
+                    reader.onloadend = () => {
+                      setForm({
+                        ...form,
+                        Profile_Image: reader.result,
+                      });
+                    };
 
-        // ✅ Convert to base64
-        const reader = new FileReader();
+                    reader.readAsDataURL(compressedFile);
+                  } catch (err) {
+                    console.error("Compression Error:", err);
+                  }
+                }}
+              />
 
-        reader.onloadend = () => {
-          setForm({
-            ...form,
-            Profile_Image: reader.result,
-          });
-        };
+              {/* CUSTOM BUTTON */}
+              <label
+                htmlFor="member-photo"
+                className="
+      h-[48px]
+      w-full
+      bg-gray-800
+      rounded-lg
+      flex
+      items-center
+      justify-center
+      cursor-pointer
+      text-sm md:text-base
+      hover:bg-gray-700
+      transition-all
+      duration-200
+      border border-gray-700
+    "
+              >
+                {form.Profile_Image
+                  ? "✅ Photo Selected"
+                  : "📸 Add Member Photo"}
+              </label>
+            </div>
 
-        reader.readAsDataURL(compressedFile);
-
-      } catch (err) {
-        console.error("Compression Error:", err);
-      }
-    }}
-      />
-    </div>
-
-    {/* IMAGE PREVIEW */}
-    {form.Profile_Image && (
-      <div className="col-span-1 md:col-span-2 flex justify-center mt-2">
-        <img
-          src={form.Profile_Image}
-          alt="Preview"
-          className="
+            {/* IMAGE PREVIEW */}
+            {form.Profile_Image && (
+              <div className="col-span-1 md:col-span-2 flex justify-center mt-2">
+                <img
+                  src={form.Profile_Image}
+                  alt="Preview"
+                  className="
             w-20 h-20
             md:w-28 md:h-28
             rounded-full
@@ -839,30 +1152,54 @@ export default function MembersHero() {
             border-2 border-green-500
             shadow-lg
           "
-        />
-      </div>
-    )}
+                />
+              </div>
+            )}
 
-    {/* SUBMIT */}
-    <button
-      className="
-        col-span-1 md:col-span-2
-        bg-green-500
-        hover:bg-green-600
-        transition-all
-        duration-200
-        p-3
-        rounded-lg
-        font-semibold
-        text-white
-        text-sm md:text-base
-      "
-    >
-      Add Member
-    </button>
+            {/* SUBMIT */}
+            <button
+              disabled={loading}
+              className="
+    col-span-1 md:col-span-2
+    bg-green-500
+    hover:bg-green-600
+    transition-all
+    duration-200
+    p-3
+    rounded-lg
+    font-semibold
+    text-white
+    text-sm md:text-base
 
-  </form>
-)}
+    disabled:opacity-50
+    disabled:cursor-not-allowed
+
+    flex
+    items-center
+    justify-center
+    gap-2
+  "
+            >
+              {loading ? (
+                <>
+                  <div
+                    className="
+          w-5 h-5
+          border-2
+          border-white
+          border-t-transparent
+          rounded-full
+          animate-spin
+        "
+                  />
+                  Adding Member...
+                </>
+              ) : (
+                "Add Member"
+              )}
+            </button>
+          </form>
+        )}
 
         {view === "revenue" && (
           <div
@@ -1085,7 +1422,9 @@ export default function MembersHero() {
                     try {
                       await fetch(
                         // `http://127.0.0.1:5000/users/${selectedUser.Phone_Number}`,
-                        MEMBERS_API.UPDATE_SINGLE_USER(selectedUser.Phone_Number),
+                        MEMBERS_API.UPDATE_SINGLE_USER(
+                          selectedUser.Phone_Number,
+                        ),
                         {
                           method: "PUT",
                           headers: {
@@ -1138,7 +1477,9 @@ export default function MembersHero() {
                     try {
                       await fetch(
                         // `http://127.0.0.1:5000/users/${selectedUser.Phone_Number}/renew`,
-                        MEMBERS_API.RENEW_SINGLE_USER(selectedUser.Phone_Number),
+                        MEMBERS_API.RENEW_SINGLE_USER(
+                          selectedUser.Phone_Number,
+                        ),
                         {
                           method: "POST",
                           headers: {

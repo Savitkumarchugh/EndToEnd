@@ -121,8 +121,9 @@ class GymDB:
 
     # ✅ Calculate Remaining Days
     def calculate_remaining_days(self, end_date):
-        today = datetime.today()
-        end = datetime.strptime(end_date, "%Y-%m-%d")
+        today = datetime.today().date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
         return (end - today).days
 
     # ✅ Get All Users
